@@ -169,6 +169,11 @@ button { cursor: pointer; }
 }
 .add:hover { background: var(--blue-ink); }
 .add.done { background: var(--green); }
+.add:disabled { background: #b9ab9c; cursor: default; }
+.soldout .card-media img, .soldout .fan img { filter: grayscale(1) opacity(.55); }
+.soldout-tag { position: absolute; z-index: 3; top: 12px; inset-inline-start: 12px; background: var(--cocoa); color: var(--cream); border-radius: var(--r-pill); padding: 2px 12px; font-weight: 800; font-size: 14px; }
+.card { position: relative; }
+.left-note { color: #B26A00; font-weight: 700; font-size: 13.5px; }
 
 /* bundles */
 .bundles { display: grid; gap: 18px; }
@@ -523,7 +528,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
 </div>
 
 <script src="config.js?v=40fef3c1"></script>
-<script src="core.js?v=bbc8d356"></script>
+<script src="core.js?v=abfacc80"></script>
 <script>
 (function () {
   "use strict";
@@ -532,7 +537,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
   var state = {
     catalog: api.cachedCatalog(),
     cart: (GGx.lsGet("gg_cart") || []).filter(function (c) { return c && c.id && c.qty > 0; }),
-    promo: null, tab: "bars", step: "cart", shot: null, lastOrder: null, busy: false
+    promo: null, tab: "bars", step: "cart", shot: null, lastOrder: null, busy: false, stock: {}
   };
   var qtyPick = {}; // per-card chosen quantity
 
@@ -591,6 +596,21 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
     $("drip").querySelector("path").setAttribute("d", d);
   }
 
+  /* ---------- stock ---------- */
+  function inCart(type, id) { var l = state.cart.find(function (c) { return c.type === type && c.id === id; }); return l ? l.qty : 0; }
+  function avail(type, id) { return GGx.availableFor(state.catalog, state.stock, type, id); }
+  function remaining(type, id) { return Math.max(0, Math.min(99, avail(type, id)) - inCart(type, id)); }
+  function stockBits(type, id) {
+    var a = avail(type, id);
+    if (a <= 0) return { sold: true, tag: '<span class="soldout-tag">خلصت</span>', note: "" };
+    return { sold: false, tag: "", note: a <= 5 ? '<div class="left-note">باقي ' + a + ' بس</div>' : "" };
+  }
+  function actionsHTML(key, type, id) {
+    var q = qtyPick[key] || 1, s = stockBits(type, id);
+    if (s.sold) return '<div class="actions"><button type="button" class="add" disabled>خلصان حاليًا</button></div>';
+    return '<div class="actions">' + stepperHTML(key, q) + '<button type="button" class="add" data-add="' + key + '">أضف للسلة</button></div>';
+  }
+
   /* ---------- shop rendering ---------- */
   function stepperHTML(key, val, small) {
     return '<div class="stepper" data-key="' + key + '"><button type="button" data-step="1" aria-label="زوّد">+</button><output aria-live="polite">' + val + '</output><button type="button" data-step="-1" aria-label="قلّل"' + (val <= 1 ? " disabled" : "") + '>−</button></div>';
@@ -598,14 +618,14 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
   function renderProducts() {
     var ps = activeProducts();
     $("productGrid").innerHTML = ps.map(function (p) {
-      var key = "product:" + p.id; var q = qtyPick[key] || 1;
-      return '<article class="card" style="--c:' + esc(p.color || "#0B46D0") + '">' +
+      var key = "product:" + p.id, sb = stockBits("product", p.id);
+      return '<article class="card' + (sb.sold ? " soldout" : "") + '" style="--c:' + esc(p.color || "#0B46D0") + '">' + sb.tag +
         '<div class="card-media"><img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" loading="lazy" decoding="async"></div>' +
         '<div class="card-body">' +
           '<h3 class="card-name"><span class="latin">' + esc(p.name) + '</span>' + (p.nameAr ? '<span class="ar">' + esc(p.nameAr) + '</span>' : "") + '</h3>' +
           '<p class="card-desc">' + esc(p.desc) + '</p>' +
-          '<div class="price">' + money(p.price) + '</div>' +
-          '<div class="actions">' + stepperHTML(key, q) + '<button type="button" class="add" data-add="' + key + '">أضف للسلة</button></div>' +
+          '<div class="price">' + money(p.price) + '</div>' + sb.note +
+          actionsHTML(key, "product", p.id) +
         '</div></article>';
     }).join("") || '<div class="empty"><h3>المنيو بيتجهز</h3><p>ارجعلنا كمان شوية.</p></div>';
   }
@@ -622,7 +642,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
     }).join("");
   }
   function bundleHTML(b, kind) {
-    var key = "bundle:" + b.id; var q = qtyPick[key] || 1;
+    var key = "bundle:" + b.id, sb = stockBits("bundle", b.id);
     var value = GGx.bundleItemsValue(state.catalog, b), save = value - GGx.num(b.price);
     var pieces = (b.items || []).reduce(function (a, it) { return a + GGx.num(it.qty); }, 0);
     var chips = (b.items || []).map(function (it) {
@@ -630,15 +650,15 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
       return '<li><span class="latin">' + esc(p.name) + '</span>' + (it.qty > 1 ? " × " + it.qty : "") + '</li>';
     }).join("");
     var tag = kind === "offer" ? (b.endsAt === GGx.todayISO() ? "النهارده بس" : "عرض") : (pieces ? pieces + " قطع" : "باكدج");
-    return '<article class="bundle">' +
-      '<div class="bundle-media"><span class="bundle-tag">' + esc(tag) + '</span><div class="fan">' + fanHTML(b) + '</div></div>' +
+    return '<article class="bundle' + (sb.sold ? " soldout" : "") + '">' +
+      '<div class="bundle-media"><span class="bundle-tag">' + esc(sb.sold ? "خلصت" : tag) + '</span><div class="fan">' + fanHTML(b) + '</div></div>' +
       '<div class="bundle-body">' +
         '<h3>' + esc(b.name) + '</h3>' +
         (b.desc ? '<p class="card-desc">' + esc(b.desc) + '</p>' : "") +
         (chips ? '<ul class="chips">' + chips + '</ul>' : "") +
         '<div class="bundle-foot"><div><div class="price">' + money(b.price) + (save > 0 ? '<s>' + money(value) + '</s>' : "") + '</div>' +
-        (save > 0 ? '<div class="save-note">هتوفّر ' + money(save) + '</div>' : "") + '</div>' +
-        '<div class="actions">' + stepperHTML(key, q) + '<button type="button" class="add" data-add="' + key + '">أضف للسلة</button></div></div>' +
+        (save > 0 ? '<div class="save-note">هتوفّر ' + money(save) + '</div>' : "") + sb.note + '</div>' +
+        actionsHTML(key, "bundle", b.id) + '</div>' +
       '</div></article>';
   }
   function renderBundles() {
@@ -686,13 +706,17 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
     var st = e.target.closest(".stepper button");
     if (st) {
       var wrap = st.parentElement, key = wrap.dataset.key;
-      var v = Math.max(1, Math.min(99, (qtyPick[key] || 1) + Number(st.dataset.step)));
+      var kp = key.split(":"), lim = Math.max(1, remaining(kp[0], kp.slice(1).join(":")));
+      var v = Math.max(1, Math.min(lim, (qtyPick[key] || 1) + Number(st.dataset.step)));
+      if (Number(st.dataset.step) > 0 && v === (qtyPick[key] || 1) && lim < 99) toast("المتاح من الصنف ده " + avail(kp[0], kp.slice(1).join(":")) + " بس");
       qtyPick[key] = v; wrap.querySelector("output").textContent = v; wrap.querySelector('[data-step="-1"]').disabled = v <= 1;
       return;
     }
     var add = e.target.closest("[data-add]");
     if (add) {
-      var k = add.dataset.add, q = qtyPick[k] || 1;
+      var k = add.dataset.add, kq = k.split(":"), left = remaining(kq[0], kq.slice(1).join(":"));
+      var q = Math.min(qtyPick[k] || 1, left);
+      if (q <= 0) { toast("كل الكمية المتاحة من الصنف ده في سلتك"); return; }
       addToCart(k, q);
       add.classList.add("done"); add.textContent = "اتضافت ✓";
       setTimeout(function () { add.classList.remove("done"); add.textContent = "أضف للسلة"; }, 1300);
@@ -748,7 +772,12 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
     if (!key) return;
     var parts = key.split(":"), line = state.cart.find(function (c) { return c.type === parts[0] && c.id === parts.slice(1).join(":"); });
     if (!line) return;
-    if (r) line.qty = 0; else line.qty = Math.min(99, line.qty + Number(b.dataset.d));
+    if (r) line.qty = 0;
+    else {
+      var d = Number(b.dataset.d), cap = Math.min(99, avail(line.type, line.id));
+      if (d > 0 && line.qty >= cap) { toast("المتاح من الصنف ده " + cap + " بس"); return; }
+      line.qty = Math.min(cap, line.qty + d);
+    }
     state.cart = state.cart.filter(function (c) { return c.qty > 0; });
     saveCart(); renderCart();
   });
@@ -893,6 +922,13 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
     }, function (err) {
       state.busy = false; renderFoot();
       var m = $("submitErr"); m.hidden = false;
+      if (err && err.message === "out_of_stock") {
+        var names = (err.short || []).map(function (s) { var p = GGx.productById(state.catalog, s.id); return (p ? p.name : s.id) + " (المتاح " + s.have + ")"; }).join("، ");
+        m.textContent = "للأسف الكمية دي مبقتش متاحة: " + names + ". عدّل السلة وجرّب تاني.";
+        loadStock();
+        m.scrollIntoView({ block: "center", behavior: "smooth" });
+        return;
+      }
       m.textContent = err && err.message === "shot_too_big" ? "صورة التحويل كبيرة. اعمل لها قص (crop) على جزء التحويل بس وارفعها تاني."
         : "الطلب متسجلش، غالبًا مشكلة في الإنترنت. اتأكد من الاتصال ودوس اطلب تاني.";
       m.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -913,9 +949,16 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
   renderAll();
   var h = (location.hash || "").replace("#", "");
   if (h === "packages" || h === "offers") setTab(h);
+  function loadStock() {
+    return api.getStock().then(function (s) {
+      if (JSON.stringify(s) !== JSON.stringify(state.stock)) { state.stock = s; renderProducts(); renderBundles(); renderCart(); }
+    }, function () {});
+  }
   api.getCatalog().then(function (c) {
     if (JSON.stringify(c) !== JSON.stringify(state.catalog)) { state.catalog = c; renderAll(); }
   }, function (e) { if (window.console) console.warn("catalog", e); });
+  loadStock();
+  $("cartbarBtn").addEventListener("click", loadStock);
 })();
 </script>
 </body>
