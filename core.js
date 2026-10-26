@@ -12,7 +12,8 @@
       instapayLink: "",
       shippingFee: 0,
       shippingNote: "مصاريف الشحن بتختلف حسب المنطقة وبتبدأ من ١٥ ج.م",
-      notifyTopic: "gangam-1dnz926omo5tur"
+      notifyTopic: "gangam-1dnz926omo5tur",
+      lowStockAlert: 5
     },
     products: [
       { id: "original", name: "Original", nameAr: "أوريجينال", desc: "شوكولاتة باللبن كلاسيك", tagline: "الكلاسيك عمره ما يخيب", price: 40, color: "#4B2BC8", image: "images/original.webp", active: true },

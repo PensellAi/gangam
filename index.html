@@ -528,7 +528,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
 </div>
 
 <script src="config.js?v=40fef3c1"></script>
-<script src="core.js?v=abfacc80"></script>
+<script src="core.js?v=48c9424d"></script>
 <script>
 (function () {
   "use strict";
@@ -603,7 +603,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shad
   function stockBits(type, id) {
     var a = avail(type, id);
     if (a <= 0) return { sold: true, tag: '<span class="soldout-tag">خلصت</span>', note: "" };
-    return { sold: false, tag: "", note: a <= 5 ? '<div class="left-note">باقي ' + a + ' بس</div>' : "" };
+    var lim = GGx.num(state.catalog.settings.lowStockAlert) || 5;
+    return { sold: false, tag: "", note: a <= lim ? '<div class="left-note">باقي ' + a + ' بس</div>' : "" };
   }
   function actionsHTML(key, type, id) {
     var q = qtyPick[key] || 1, s = stockBits(type, id);
